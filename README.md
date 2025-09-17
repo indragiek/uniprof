@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/indragiek-uniprof-badge.png)](https://mseep.ai/app/indragiek-uniprof)
+
 # `uniprof`
 
 uniprof simplifies CPU profiling for humans and AI agents. Profile any application without code changes or added dependencies.

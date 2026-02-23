@@ -5,7 +5,7 @@ Build script for UniProf profiler containers.
 This script builds multi-architecture Docker containers for various language/platform profilers
 and optionally pushes them to the GitHub Container Registry.
 
-Note: When building multi-architecture images, Docker creates separate images for each 
+Note: When building multi-architecture images, Docker creates separate images for each
 architecture plus a manifest list. This results in multiple images in the registry:
 - One tagged image (e.g., "latest") which is the manifest list
 - Several untagged images (SHA hashes) for individual architectures
@@ -32,7 +32,8 @@ ARCHITECTURES = ["linux/amd64", "linux/arm64"]
 
 def run_command(cmd: List[str], check: bool = True, stream_output: bool = False) -> subprocess.CompletedProcess:
     """Run a command and return the result."""
-    print(f"Running: {' '.join(cmd)}")
+    # Making a change to see if the code review bot will get triggered
+    print(f"Running a command: {' '.join(cmd)}")
     if stream_output:
         # Stream output in real-time
         return subprocess.run(cmd, check=check)
@@ -49,17 +50,17 @@ def check_docker_buildx() -> bool:
             print("Error: Docker buildx is not available")
             print("Please ensure you have Docker Desktop or Docker CE with buildx plugin")
             return False
-        
+
         # Check if we have a builder instance
         result = run_command(["docker", "buildx", "ls"], check=False)
         if result.returncode == 0 and "docker-container" in result.stdout:
             return True
-        
+
         # Create a new builder instance with multi-arch support
         print("Creating buildx builder instance...")
         run_command(["docker", "buildx", "create", "--name", "uniprof-builder", "--use", "--platform", ",".join(ARCHITECTURES)])
         run_command(["docker", "buildx", "inspect", "--bootstrap"])
-        
+
         return True
     except FileNotFoundError:
         print("Error: Docker command not found")
@@ -69,7 +70,7 @@ def check_docker_buildx() -> bool:
 def get_version_info(platform: str, temp_tag: str) -> Dict[str, str]:
     """Extract version information from a built container."""
     versions = {}
-    
+
     # Platform-specific commands to get version info
     # Only include tools installed in the Dockerfile, not in bootstrap script
     if platform == "python":
@@ -117,16 +118,16 @@ def get_version_info(platform: str, temp_tag: str) -> Dict[str, str]:
         }
     else:
         return versions
-    
+
     # Run each command in the container
     for tool, cmd in commands.items():
         try:
             result = run_command([
-                "docker", "run", "--rm", 
+                "docker", "run", "--rm",
                 "--platform", get_current_platform(),
                 temp_tag
             ] + cmd, check=False)
-            
+
             if result.returncode == 0:
                 version = result.stdout.strip()
                 # Clean up version strings
@@ -232,11 +233,11 @@ def get_version_info(platform: str, temp_tag: str) -> Dict[str, str]:
                             version = match.group(1)
                         else:
                             version = lines[0].strip()
-                    
+
                 versions[tool] = version
         except Exception as e:
             print(f"Warning: Could not get version for {tool}: {e}")
-    
+
     return versions
 
 
@@ -252,9 +253,9 @@ def generate_description(platform: str, versions: Dict[str, str]) -> str:
         "jvm": "JVM profiling environment with async-profiler for Java/Kotlin/Scala applications",
         "dotnet": ".NET profiling environment with dotnet-trace profiler for C#/F#/VB.NET applications"
     }
-    
+
     base_desc = descriptions.get(platform, f"{platform} profiling environment")
-    
+
     # Add version info
     version_parts = []
     if platform == "python" and versions:
@@ -304,7 +305,7 @@ def generate_description(platform: str, versions: Dict[str, str]) -> str:
             version_parts.append(f".NET {versions['dotnet']}")
         if "dotnet-trace" in versions:
             version_parts.append(f"dotnet-trace {versions['dotnet-trace']}")
-    
+
     if version_parts:
         return f"{base_desc}. Includes {', '.join(version_parts)}."
     else:
@@ -327,27 +328,27 @@ def clean_existing_images(platform_name: str, tag: Optional[str] = None) -> None
     image_tag = f"{REGISTRY}-{platform_name}:{tag or 'latest'}"
     # Match the temporary tag pattern used during build
     temp_tag = f"uniprof-{platform_name}:temp-build-{tag or 'latest'}"
-    
+
     print(f"\nCleaning up existing images for {platform_name}...")
-    
+
     # Get list of running containers using this image
     try:
         result = run_command([
-            "docker", "ps", "-a", "-q", 
+            "docker", "ps", "-a", "-q",
             "--filter", f"ancestor={image_tag}"
         ], check=False)
-        
+
         if result.returncode == 0 and result.stdout.strip():
             container_ids = result.stdout.strip().split('\n')
             print(f"Found {len(container_ids)} containers using {image_tag}")
-            
+
             # Stop and remove containers
             for container_id in container_ids:
                 print(f"Removing container {container_id}")
                 run_command(["docker", "rm", "-f", container_id], check=False)
     except Exception as e:
         print(f"Warning: Error checking for containers: {e}")
-    
+
     # Remove the images
     for tag in [image_tag, temp_tag]:
         try:
@@ -358,15 +359,15 @@ def clean_existing_images(platform_name: str, tag: Optional[str] = None) -> None
                 run_command(["docker", "rmi", "-f", tag], check=False)
         except Exception as e:
             print(f"Warning: Error removing image {tag}: {e}")
-    
+
     # Also check for any dangling images with our labels
     try:
         result = run_command([
-            "docker", "images", "-q", 
+            "docker", "images", "-q",
             "--filter", "dangling=true",
             "--filter", f"label=org.opencontainers.image.source=https://github.com/indragiek/uniprof"
         ], check=False)
-        
+
         if result.returncode == 0 and result.stdout.strip():
             image_ids = result.stdout.strip().split('\n')
             print(f"Found {len(image_ids)} dangling uniprof images")
@@ -380,13 +381,13 @@ def clean_existing_images(platform_name: str, tag: Optional[str] = None) -> None
 def annotate_manifest(image_tag: str, description: str) -> bool:
     """Add description annotation to the manifest for multi-arch images."""
     print(f"\nAdding description annotation to manifest...")
-    
+
     try:
         # First, we need to enable experimental CLI features for manifest commands
         # Set the environment variable for this command
         env = os.environ.copy()
         env['DOCKER_CLI_EXPERIMENTAL'] = 'enabled'
-        
+
         # Inspect the manifest to ensure it exists
         inspect_cmd = ["docker", "manifest", "inspect", image_tag]
         result = subprocess.run(inspect_cmd, capture_output=True, text=True, env=env)
@@ -394,7 +395,7 @@ def annotate_manifest(image_tag: str, description: str) -> bool:
             print(f"Warning: Could not inspect manifest for {image_tag}")
             # Try with buildx imagetools instead
             pass
-        
+
         # Create a new manifest with annotations using buildx imagetools
         # This is more reliable than docker manifest annotate
         annotate_cmd = [
@@ -403,7 +404,7 @@ def annotate_manifest(image_tag: str, description: str) -> bool:
             "-t", image_tag,
             image_tag  # Source and destination are the same to update in place
         ]
-        
+
         result = run_command(annotate_cmd, check=False)
         if result.returncode == 0:
             print("Successfully added description annotation to manifest")
@@ -411,7 +412,7 @@ def annotate_manifest(image_tag: str, description: str) -> bool:
         else:
             print(f"Warning: Could not annotate manifest: {result.stderr if result.stderr else 'Unknown error'}")
             return False
-            
+
     except Exception as e:
         print(f"Warning: Error annotating manifest: {e}")
         return False
@@ -422,26 +423,26 @@ def build_multiarch_container(platform_name: str, tag: Optional[str] = None, pus
     if platform_name not in SUPPORTED_PLATFORMS:
         print(f"Error: Unsupported platform '{platform_name}'. Supported: {', '.join(SUPPORTED_PLATFORMS)}")
         return False, None
-    
+
     # Clean up existing images first unless skipped
     if not skip_cleanup:
         clean_existing_images(platform_name, tag)
-    
+
     # Get the project root directory
     script_dir = Path(__file__).parent
     project_root = script_dir.parent
     dockerfile_path = project_root / "containers" / platform_name / "Dockerfile"
     context_path = project_root / "containers" / platform_name
-    
+
     if not dockerfile_path.exists():
         print(f"Error: Dockerfile not found at {dockerfile_path}")
         return False, None
-    
+
     # Build the image tag
     image_tag = f"{REGISTRY}-{platform_name}:{tag or 'latest'}"
     # Use a local-only tag for temporary image to prevent accidental pushes
     temp_tag = f"uniprof-{platform_name}:temp-build-{tag or 'latest'}"
-    
+
     # First, build a temporary image for the current platform to extract version info
     # IMPORTANT: The temp_tag does NOT include the registry prefix to prevent accidental pushes
     print(f"\nBuilding temporary image to extract version information...")
@@ -454,7 +455,7 @@ def build_multiarch_container(platform_name: str, tag: Optional[str] = None, pus
         "--load",  # Load into local docker only
         str(context_path)
     ]
-    
+
     try:
         result = run_command(build_cmd, stream_output=True)
         if result.returncode != 0:
@@ -463,16 +464,16 @@ def build_multiarch_container(platform_name: str, tag: Optional[str] = None, pus
     except subprocess.CalledProcessError:
         print(f"\nError building temporary container")
         return False, None
-    
+
     # Extract version information
     print(f"\nExtracting version information from container...")
     versions = get_version_info(platform_name, temp_tag)
-    
+
     # Generate description
     description = generate_description(platform_name, versions)
     print(f"\nGenerated description: {description}")
     print(f"Version info: {json.dumps(versions, indent=2)}")
-    
+
     # Build the final multi-arch image with all labels
     print(f"\nBuilding final multi-architecture image...")
     build_cmd = [
@@ -486,11 +487,11 @@ def build_multiarch_container(platform_name: str, tag: Optional[str] = None, pus
         "--provenance=false",
         "--sbom=false"
     ]
-    
+
     # Add version-specific labels
     for tool, version in versions.items():
         build_cmd.extend(["--label", f"com.github.indragiek.uniprof.{tool}.version={version}"])
-    
+
     # Add output type
     if push:
         build_cmd.append("--push")
@@ -502,24 +503,24 @@ def build_multiarch_container(platform_name: str, tag: Optional[str] = None, pus
         # For local builds, we can only load single-platform images
         print("Note: Multi-platform images cannot be loaded locally. Use --push to push to registry.")
         build_cmd.extend(["--platform", get_current_platform(), "--load"])
-    
+
     build_cmd.append(str(context_path))
-    
+
     try:
         result = run_command(build_cmd, stream_output=True)
         if result.returncode == 0:
             print(f"\nSuccessfully built {image_tag}")
-            
+
             # If we pushed the image, add description annotation to the manifest
             if push:
                 annotate_manifest(image_tag, description)
-            
+
             # Clean up temporary image
             try:
                 run_command(["docker", "rmi", temp_tag], check=False)
             except:
                 pass
-            
+
             return True, versions
         else:
             print(f"\nError building container")
@@ -547,21 +548,21 @@ def check_docker() -> bool:
 def update_docker_utils() -> None:
     """Update docker.ts to specify architecture when pulling images."""
     print("\nUpdating docker utils to specify architecture...")
-    
+
     docker_utils_path = Path(__file__).parent.parent / "src" / "utils" / "docker.ts"
-    
+
     if not docker_utils_path.exists():
         print(f"Warning: Could not find {docker_utils_path}")
         return
-    
+
     # Read the current content
     content = docker_utils_path.read_text()
-    
+
     # Check if already updated
     if "--platform" in content:
         print("Docker utils already updated to specify platform")
         return
-    
+
     # Add platform detection function
     platform_detection = '''import * as os from 'os';
 
@@ -584,7 +585,7 @@ function getDockerPlatform(): string {
 }
 
 '''
-    
+
     # Find where to insert the function (after imports)
     import_end = content.rfind('import')
     if import_end != -1:
@@ -593,13 +594,13 @@ function getDockerPlatform(): string {
         if newline_pos != -1:
             # Insert the platform detection function
             content = content[:newline_pos + 1] + '\n' + platform_detection + content[newline_pos + 1:]
-    
+
     # Update the docker pull command to include platform
     content = content.replace(
         'const pullResult = Bun.spawn([\'docker\', \'pull\', image]);',
         'const pullResult = Bun.spawn([\'docker\', \'pull\', \'--platform\', getDockerPlatform(), image]);'
     )
-    
+
     # Write the updated content
     docker_utils_path.write_text(content)
     print("Updated docker.ts to specify platform when pulling images")
@@ -613,74 +614,74 @@ def main():
 Examples:
   # Build the Python profiler container
   uv run containers/build_containers.py python
-  
+
   # Build and push to registry
   uv run containers/build_containers.py python --push
-  
+
   # Build with a specific tag
   uv run containers/build_containers.py python --tag v1.0.0
-  
+
   # Build all platforms
   uv run containers/build_containers.py all --push
 """
     )
-    
+
     parser.add_argument(
         "platform",
         choices=SUPPORTED_PLATFORMS + ["all"],
         help="Platform to build container for (or 'all' for all platforms)"
     )
-    
+
     parser.add_argument(
         "--push",
         action="store_true",
         help="Push the built images to the GitHub Container Registry"
     )
-    
+
     parser.add_argument(
         "--tag",
         default="latest",
         help="Tag for the Docker image (default: latest)"
     )
-    
+
     parser.add_argument(
         "--update-docker-utils",
         action="store_true",
         help="Update docker.ts to specify platform when pulling images"
     )
-    
+
     parser.add_argument(
         "--skip-cleanup",
         action="store_true",
         help="Skip removing existing containers and images before building"
     )
-    
+
     args = parser.parse_args()
-    
+
     # Check if Docker is available
     if not check_docker():
         sys.exit(1)
-    
+
     # Check if Docker buildx is available
     if not check_docker_buildx():
         sys.exit(1)
-    
+
     # Update docker utils if requested
     if args.update_docker_utils:
         update_docker_utils()
-    
+
     # Determine which platforms to build
     platforms_to_build = SUPPORTED_PLATFORMS if args.platform == "all" else [args.platform]
-    
+
     # Build the container(s)
     all_successful = True
     all_versions = {}
-    
+
     for platform in platforms_to_build:
         print(f"\n{'='*60}")
         print(f"Building {platform} container...")
         print(f"{'='*60}")
-        
+
         success, versions = build_multiarch_container(platform, args.tag, args.push, args.skip_cleanup)
         if success:
             all_versions[platform] = versions
@@ -690,19 +691,19 @@ Examples:
                 print(f"Failed to build {platform}, continuing with other platforms...")
             else:
                 sys.exit(1)
-    
+
     if all_successful:
         print("\n" + "="*60)
         print("All containers built successfully!")
         print("="*60)
-        
+
         # Print summary of versions
         print("\nVersion Summary:")
         for platform, versions in all_versions.items():
             print(f"\n{platform}:")
             for tool, version in versions.items():
                 print(f"  {tool}: {version}")
-        
+
         if args.push:
             print(f"\nImages pushed to {REGISTRY}")
         else:
